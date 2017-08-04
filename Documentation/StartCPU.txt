@@ -1,0 +1,214 @@
+Starting the CPU core
+======================
+
+
+  There are some questions that must be resolved before we start to emulate
+the instructions of the i8080A.
+
+  We need to think about:
+
+a) An API
+b) A context
+c) A method for opcode decoding
+
+  The API (Application Programmers Interface) is the functions or procedures
+that will be called from the main emulator which access the CPU core.  It's
+the way the rest of the emulation code accesses the functions of the core. 
+The decision that we have to make is how that will be.  We are going to make
+our core MZ80 compliant or perhaps MAME compliant?  What functions we will
+need?  What arguments will they have?
+
+  As an example the main functions we will need:
+
+	reset()            -> resets the CPU core
+	execute(nclyces)   -> the core executes n cycles
+	getcontext()       -> returns the CPU context
+	setcontext(ctx)    -> sets the CPU context
+	interrupt()        -> sends an interrupt signal
+
+  Perhaps it will be better to start with a simple API and then later as we
+implement new functions of the emulator, make it more complex.  This has
+benefits and could also cause a lot of problems.  If we implemented the API
+and did not keep in mind that it might change, we might come to a situation
+where it will be really hard to change.
+
+  The context is the structure that holds the CPU (the core) state.  The state
+of a CPU is its registers, the memory it accesses and some flags that keep the
+state of the CPU. 
+
+  The i8080A has 7 8-bit registers (also called accumulator registers in the
+doc): A (the main accumulator register, where most of the operations will be
+performed), B, C, D, E, H and L.  They can also be accessed in pairs as four
+16-bit registers: AF (A register and the state word PSW), BC, DE and HL. AF is
+only used (I think) for pushing it[kgw1] onto the stack, BC and DE work as
+data counters and also sometimes for indirect addressing.  HL is the main
+register for memory addressing.  Keep in mind that we have to access those
+registers both as 8-bit registers and 16-bit registers while writing the
+context.  To make this possible, we could implement them as a two-element char
+array, a union, or we can have separated fields for the 8-bit and 16-bit
+versions (but this is usually a really bad idea).
+
+  There are also two more registers, and they are very important.  The PC
+register (Program Counter), is a 16-bit register which points to the memory
+address of the instruction to be executed.  The SP register, or Stack Pointer
+register, points to the memory address of the top of the stack.  I will talk
+about the stack later.
+
+  There is yet another set of registers that we have to take care of: the CPU
+flags, these are also called the Processor State Word (PSW) when we talk about
+all of them together.  The flags are bits that are modified by some of the
+i8080A's instructions, gathering information about the operations performed. 
+This information is later used to make decisions - mainly for deciding where
+and when to branch.  The i8080 has 5 flags: Sign (S), Zero (Z), Auxiliary
+Carry (Ac), Parity (P) and Carry(C).  They are stored in the PSW, an 8-bit
+register, as follows:
+
+            7   6   5   4   3   2   1   0      bit number
+
+            S   Z   X  AC   X   P   X   C      content
+
+     X means that the bit is unassigned (I think it is usually set to zero)
+
+  I will talk about flags later when we start the emulation of the
+instructions, but how would they stored in the context?  I think there are two
+alternatives, and both have good and bad points.  The first is store them in a
+single 8-bit register, this means storing the PSW as it is (also called
+register F).  The second is to store them in separate fields, each flag being
+a Boolean variable.  The first choice means we will have to do shift and
+logical operations each time we want to change a flag.  The second means that
+we will have to pack all flags in an 8-bit word each time PSW (F) is accessed. 
+What solution is better?  Depends upon how many times each kind of operations
+is performed and the cost of each.  The more frequent are actually the
+operations that change flags.  So perhaps the second is the better choice.
+
+  We have also to have information about interrupts: a flag change if the
+interrupts are enabled or they are disabled, a flag change if a interrupt is
+currently being serviced and perhaps a queue of interrupt signals.  But I will
+talk about interrupts later.
+
+  Other small thing we have to store is a flag about the CPU halt state.  The
+CPU is in the "halt state" when it is stopped, usually waiting for an external
+signal from a device (an interrupt).  Very curious, the i8080A can be
+completely hanged if you disable interrupts and later you halt it.  In that
+situation only a reset or a power up (in fact they are the same) can put the
+CPU to work again.
+
+  We will have to store some other information that usually is not stored in a
+real CPU.  This information can be used as statistics for finding out about
+the execution and to implement accurate timing.  The more important of these
+is the accurate timing, which basically means the number of cycles executed
+since last reset signal.
+
+  And there is still the info about the memory and the IO space.  Here there
+are two choices: memory and IO mapping or having a simple array for the memory
+and for the IO.  We will need memory and IO mapping for the emulation of Space
+Invaders, but we do not need to implement them in the first version of the
+emulator, it would be better though.  If we do not use memory mapping the
+context will need to have a pointer to the memory region that stores the
+machine memory, and a pointer to the memory region that stores the IO space. 
+If we do use memory mapping on the other hand, we will put pointers to
+structures that store the memory maps for read and write (and also pointers
+for IO mapping).  I will talk about them when we decide to implement them.
+
+  I think that is all about context.  Think about all that then work a bit on
+your own context.  Later I will release the official one.
+
+  Now we will talk about instruction decoding.  Each time we read an opcode we
+need to find out which instruction it represents.  The i8080A has fixed length
+opcodes that are a single byte in size (some instructions are more than one
+byte, but the later bytes are not used for decoding).  This makes life a lot
+easier!  We will have to decide about 256 (a byte, 2^8) potentially different
+operations.  How do we do this?
+
+
+  First approach, an array of if's:
+
+     if (opcode == 0x00) {}
+     else if (opcode == 0x01) {}
+         .
+         .
+     else if (opcode == 0x80) {}
+         .
+         .
+     else if (opcode == 0xfe) {}
+     else /* opcode ==0xff */ {}
+
+
+  That is really a very bad idea (although we have a really intelligent
+compiler, I do not think that it is that intelligent).  Why?  Because to
+decide which instruction opcode X is, we will have to do X-1 tests and jumps
+to get to it.  This has a brutal cost.  The last opcode (0xff) will cost 255
+tests and 255 jumps.  This is not a good choice, and if anyone implemented
+such an emulator, it will need a really powerful machine to run it.
+
+  We have to decode the instructions very quickly because the decode function
+is the most executed function of the emulator.  How we will do it?  We will
+use jump tables.  A jump table is an array of target jump addresses that are
+indexed by a number, and that number tells what jump must be performed. In our
+case the number will be the opcode and also the jump address of the code (or
+routine) that implements the opcode.  So we will need to have an array of 256
+jump addresses.
+
+  How can we implement it with C?  We can make it by hand or we can use the
+switch/case statement and hope the C compiler (DJGCC) is implemented well
+enough that it does this all for us, (it is by the way).  A C compiler will
+detect that the switch/case statement has a lot of different values that are
+close to one another and will implement it as a jump table.  In any case we
+have two alternatives, it is our decision to choose one or the other.  The
+switch/case alternative is a bit more readable and understandable, but I
+cannot see any other advantages or disadvantages.
+
+
+  Example of an switch/case decode:
+
+     switch(opcode)
+     {
+        0x00:
+             break;
+        0x01:
+             break;
+             .
+             .
+        0x80:
+             break;
+             .
+             .
+        0xfe:
+             break;
+        0xff:
+             break;
+     }
+
+
+  This kind of structure also helps to put together groups of opcodes that
+represent the same instruction:
+
+
+     0x65:
+     0x66:
+     0x67:
+         // The implementation of the instruction
+         break;
+
+
+  An example of a hand-made jump table in C (I am not sure about the C syntax
+here, sorry):
+
+
+    (void (*opcode_handler)()) decodeTable [256]
+    {
+      opch_0x00, opch_0x01, .....
+    }
+
+  The decode code:
+
+    (void (*opcode_handler) ()) decodeTable[opcode] ();
+
+
+
+  Enough for today I must go to sleep. :)
+
+  Read the document, think about it, work on some stuff and ask questions.
+This is the best way to learn.  We will then have implemented the skeleton of
+the core.  There are still some other subjects that I will have to discuss,
+though...

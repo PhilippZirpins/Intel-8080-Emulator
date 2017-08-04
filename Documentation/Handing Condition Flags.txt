@@ -1,0 +1,321 @@
+
+[Please use a text editor with fixed spacing and tabs set to 4 to view this
+file, i.e. hopefully not notepad]
+
+=======================
+Handing Condition Flags (version 1.2)
+=======================
+
+
+Firstly - some reminders...
+
+
+
+Boolean Conditionals
+--------------------
+
+We know what these statements are yes?
+
+	<boolean expression> ? <return type> : <return type>
+
+For example:
+
+	int number = (value>0) ? value : 0;
+
+Which basically sets number to value if value>0, otherwise it sets it to zero.
+(This has the effect of making number = value unless value is negative where
+then the number then is set to zero - but don't worry about that)
+
+I tend to think that these are neater than if statements, not to mention they
+(probably?) compile to more optimised code.
+
+
+
+Define Functions
+----------------
+
+Just to make sure all you know, a #define is basically a function that holds
+code that will be "inlined" at compile time - improving speed (no procedure
+call overhead).
+
+Here is how it is "defined":
+
+	#define <function name> (<parameters>) \
+	   <statement>; \
+	   <statement>; \
+	   <statement>;
+
+The parameters being optional...
+
+
+
+Boolean Operators
+-----------------
+
+I will assume you know the logic tables of AND and OR so I shall just remind
+you what happens to values when this is done to a number.
+
+AND:
+	1010 & 1100 = 1000  i.e. Only when both bits is 1 is the result 1
+
+ OR:
+	1010 | 1100 = 1110  i.e. The result is 1 when either bits is 1
+
+XOR:
+	1010 ^ 1100 = 0110  i.e. The result is 1 only when there is a 1 and 0
+
+NOT:
+	~0110 = 1001        i.e. Every bit is "flipped"
+
+
+
+Setting and Unsetting Bits
+--------------------------
+
+Right, as you probably know in most languages (and even in most assembly
+languages) you cannot work with bits directly. (Ohh, emulation would be a much
+simpler thing if you could...)
+
+Okay, now I know you are familiar with the boolean operators, we can now use
+them to set and unset individual bits in a byte. There are two key principals
+1) setting a bit, and 2) unsetting (resetting) a bit.
+
+Right lets look at setting a bit first:
+
+Lets start easy, suppose we want to set bit 4 of an 8-bit byte to 1, how do we
+do it? (in binary)
+
+	abyte = 00000000;
+	abyte = abyte | 00010000;
+
+Remember bit numbers are labelled 7.6.5.4.3.2.1.0 by convention.
+
+Now obviously we can not do this as binary in C, so I will use hex:
+
+	abyte = 0x0;
+	abyte = abyte|0x10;
+
+This can of course be abbreviated to:
+
+	abyte |= 0x10;
+
+
+Now, since we know what the positions of the flags are (from emu8080.h),
+
+	/* These are the positions of the flags in the i8080 (and Z80) */
+	#define S_FLAG	 0x80	/* Sign				Bit 7 */
+	#define Z_FLAG   0x40	/* Zero				Bit 6 */
+	#define AC_FLAG  0x10	/* Auxiliary Carry	Bit 4 */
+	#define P_FLAG	 0x04	/* Parity			Bit 2 */
+	#define CY_FLAG	 0x01	/* Carry			Bit 0 */
+
+we can use this just like we used the constant 0x10 before.
+
+So for example - we want to set the Zero bit to indicate a result of Zero:
+
+	PSW |= Z_FLAG;
+
+You see? It is really rather simple when you get your head around it.
+
+Right now lets look at unsetting a bit. This is nearly the same as above
+but instead of using OR ('|'), we use AND ('&').
+
+You may already see a problem here, if we used AND for the whole PSW
+(Processor Status Word) we would zero all the other flags in the process.
+For this reason we must use the NOT '~' operator.
+
+An example of how NOT acts is the following,
+
+	~00001111 = 11110000
+
+Lets say we want to unset the zero flag, how would we do it? Well, first we
+need to negate all the bits of the Z_FLAG constant (~Z_FLAG) so if,
+
+	Z_FLAG  = 01000000
+
+then,
+
+	~Z_FLAG = 10111111
+
+We can now AND ('&') this negated Z_FLAG with the PSW to zero just the zero
+flag.
+
+See? It becomes quite easy when you break it down. I think we are now ready to
+have a look at the SETPSW function.
+
+
+
+The SETPSW function
+-------------------
+
+Okay, lets do this section by section:
+
+The Define
+
+   #define setpsw(val) \
+
+This is the definition for the define as described in "Define Functions". The
+parameter 'val' is the RESULT of an operation that we want to test to set the
+flags.
+
+
+Zero Flag
+
+i8080 Manual Definition:
+"If the result of an instruction has the value 0, this flag is set; otherwise
+it is reset."
+
+	/* Is the result zero? */ \
+	i8080.PSW = val==0 ? i8080.PSW|Z_FLAG : i8080.PSW & ~Z_FLAG; \
+
+Okay, here we are using a boolean conditional to test if val is zero.
+
+Remember "Setting and Unsetting Bits" and what these '&' and '|' operations do?
+
+If it is zero we return (or set i8080.PSW equal to) itself OR'ed with the
+Z_FLAG (which sets the Z_FLAG).
+
+Otherwise we return (or set i8080.PSW equal to) itself AND'ed with the negated
+Z_FLAG (which unsets the Z_FLAG).
+
+
+Sign Flag
+
+i8080 Manual Definition:
+"If the most significant bit of the result of this operation has the value 1,
+this flag is set; otherwise it is reset."
+
+Okay, here we need to detect if the MSB (Most Significant Bit) (bit 7) is 0 or
+1. If it is zero, we have a positive number, whereas if it is 1, we have a
+negative number.
+
+	/* Has the result the sign bit set? */ \
+	i8080.PSW = val&0x80 > 0 ? i8080.PSW|S_FLAG : i8080.PSW & ~S_FLAG; \
+
+The easiest way to do this is zero out the bottom bits so only bit 7 is intact
+(AND'ing with 0x80 (which is 10000000 in binary)) and then we can see if this
+number is greater than zero. Do not forget that we are working with an
+"unsigned char" here, so to the C language bit 7 is just the top most bit and
+NOT a sign bit.
+
+As you can see the rest of the statement is just like setting and unsetting
+the Zero flag above.
+
+
+Parity Flag
+
+[Thanks to Victor Moya del Barrio for posting a better version, and then
+pointing out I still didn't have it right ;)]
+
+i8080 Manual Definition:
+"If the modulo 2 sum of the bits of the result of the operation is 0, (i.e.,
+if the result has even parity), this flag is set; otherwise it is reset (i.e.,
+if the result has odd parity)."
+
+	/* Is the result of odd or even parity? */ \
+	i8080.PSW |= PARITY[val]!=0 ? i8080.PSW|P_FLAG : i8080.PSW & ~P_FLAG; \
+
+Okay, this is fairly simple. In the source there a function init_tables which
+previously calculates the parity flag for all combinations of an 8-bit value.
+The reason we do this is that it would be too costly to calculate it at
+runtime. The Sign and Zero flags could become a part of this table also.
+
+You can have a look at this code to find out how the parity works (in the code
+as of sidev5) it should not be too hard to understand if you stare at it for
+long enough. :)
+
+
+Carry Flag
+
+[Thanks to Neil Giffiths for posting a corrected version]
+
+i8080 Manual Definition:
+If the instruction resulted in a carry (from addition), or a borrow (from
+subtraction or a comparison) out of the high order bit, this flag is set;
+otherwise it is reset.
+
+[This is not in setpsw as some instructions do not need it, but I am
+describing it here for completeness.]
+
+	setcy (signed int val)
+	{
+		if (val > 0xff || val < 0x00)
+			i8080.PSW |= CY_FLAG;
+		else
+			i8080.PSW &= ~CY_FLAG;
+	}
+
+Okay, this is EXACTLY the same as the conditional operations, in fact, here is
+what it would look like in this form (which unfortunately did not fit on one
+line):
+
+	setcy (signed int val)
+	{
+		i8080.PSW = (val>0xff || val<0x00) ?
+			i8080.PSW|CY_FLAG : i8080.PSW &= ~CY_FLAG;
+	}
+
+This one is slightly more complicated in that we need to cast the incoming
+byte to this function into a "signed int" so that we can detect if we go "out
+of bounds" of the original byte. For this reason we are using a normal
+function instead of a #define (as suggested by Neil).
+
+You can see this here, with the indication that if val is greater than 0xFF
+(255) (which "rolled over 0xFF" from an addition) or is less than 0x00 (which
+was caused by a subtraction) then that would not be able to be contained in a
+byte and thus a "carry" occurred. Then the carry flag must be set. Or it may
+be unset if the byte is in the right bounds.
+
+
+Auxiliary Carry Flag
+
+i8080 Manual Definition:
+"If the instruction caused a carry out of bit 3 and into bit 4 of the
+resulting value, the auxiliary carry is set; otherwise it is reset. This flag
+is effected by single precision additions, subtractions, increments,
+decrements, comparisons, and logical operations, but it is principally used
+with additions and increments preceding a DAA (Decimal Adjust Accumulator)
+instruction.
+
+[This is not in setpsw as some instructions do not need it, but I am
+describing it here for completeness.]
+
+	#define setac(val, result) \
+		if ((i8080.A ^ result ^ val) & 0x10) |  \
+	       (((val ^ _A ^ 0x80) & (val ^ result) & 0x80) >> 5)  \
+			i8080.PSW |= AC_FLAG; \
+		else \
+			i8080.PSW &= ~AC_FLAG;
+
+Now this is a tricky one, I don't pretend to understand quite myself as I
+stole this logic from the MAME Z80 core. Of course if this is wrong when we
+start emulating Space Invaders and it uses this flag, we will hopefully be
+able to see where it goes wrong and change this implementation until the code
+executes correctly. But that is all the fun parts to come... ;)
+
+If anybody can provide a good explanation, please do!
+
+Now "val" is the operand, and "result" is (obviously) the value after the
+operation.
+
+For example, in an ADD opcode we would call 'setac' like this:
+
+	i8080.A = <a register> + value
+	setac(value, i8080.A);
+
+or for SUB:
+
+	i8080.A = <a register> - value
+	setac(value, i8080.A);
+
+
+
+Conclusions
+-----------
+
+That is it! Hope this cleared up a few things, comments are always welcome. It
+would probably be best for this to go on the webpage(s) for reference. I think
+I have pretty much summed up really the root concepts of CPU emulation. The
+rest is just writing up code from a (hopefully good) CPU reference manual!
+
+Kieron Wilkinson

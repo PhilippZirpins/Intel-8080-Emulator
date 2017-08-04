@@ -1,0 +1,70 @@
+
+ A Brief Description of Space Invaders
+======================================
+
+ Space Invaders is a Midway arcade machine from 1978 (if my sources of
+information are correct ;).  I think everyone knows this game.  It's one of
+the first classical arcade machines like Galaga, Pacman, or Pong are. I'm
+sure I never played with the arcade machine, but I never was an arcade
+machine player so ... :o.  Now I think about it I see SI is the same age as
+my brother, so when it was released I was pretty young, perhaps I could have
+played with it in a museum. :) Oh, but like any other young people I have
+played other SI versions on a lot of different machines (my first version
+was in a PC).  For sure, I'm not very good at it and I like Galaga or
+Galaxian more, but what does it matter? ;).  Okay, enough talk without
+sense, let's do some work.
+
+ Space Invaders is a very simple machine (like all other machines from that
+age).  It's built around an i8080A CPU (Intel) or another compatible CPU
+from another manufacturer (in the schematics from Spies, for example, it's a
+TI, Texas Instruments, CPU).  It is, perhaps, the first useful and cheap CPU
+(as a microCPU) released for commercial use (perhaps US army had others for
+its missiles... I don't know :).  In this case I think it is a 2Mhz CPU.  It
+has 8Kb ROM (distributed in various ICs, this machine is really old) and 8Kb
+RAM (mainly video memory, but also a bit of it is work RAM).  To be exact it
+is, 8kb i8kSRAM in 8 pieces and 8kb i16kEPROM in 4 pieces.  Ops, now I take
+a look to the schematics I see 16 RAM ICs, umm, perhaps the document I'm
+using is wrong. Does anyone wants to discover the mystery?  But it's still
+true: 8Kb ROM and 8Kb RAM.  The video memory is 7 Kb and the work memory is
+1 Kb. The video and sound hardware are very simple.  The video hardware is a
+monochrome display so each bit of the memory stores the value of one pixel
+(on/off).  The display and VRAM are 224x256.  The machine also uses two
+transparent coloured (red and green) pieces of paper in the top and the
+bottom of the screen.  That makes the screen more wonderful, doesn't it? ;)
+It didn't require extra expensive hardware ...  Sound effects are produced
+with analogue circuits so it will be hard to emulate them, so we will use
+samples instead.  As input devices, it has a 2way stick and one button (for
+each player). It also has a player 1 start button, player 2 start button,
+coin switch and TILT switch (?).  So this is what we will have to emulate.
+
+ Now I will talk a bit about the 8080 CPU.  It's an old Intel CPU released
+... ops I didn't find when it was released, anyone knows about it? Last 70s
+for sure.  It's an enhancement of the 8008 Intel CPU (the second microCPU I
+think, first was 4004).  It was a very popular CPU for many years and the
+first to be vastly used.  There were a lot of versions from different
+manufacturers (AMD, TI, NEC, NS, SIGNETICS).  Later some other compatible
+but extended CPUs were released as the 8085 and the well known Z80 (Zilog)
+which is, in my thoughts, the most impressive and beautiful 8-bit CPU ever
+made, and it is still alive :).  It's an 8-bit CPU with eight 8-bit
+registers (I'm counting also the flag register F): A, B, C, D, E, H, L and
+F.  They can be also accessed in pairs as 16-bit registers (AF, BC, DE and
+HL).  It also has a SP (stack pointer register) and a PC (Program Counter
+Register), both of which are 16 bit registers.  Register A is the main
+accumulator register; many operations are performed with that register as
+source/target register.  Register B, C, D, E, BC, DE are multipurpose
+registers, mainly used as accumulators also. Register HL is used for
+indirect memory addressing.  The 8080 has three types of memory addressing,
+immediate, direct and indirect (using HL).  If we also count branch
+instructions we have relative to PC addressing.  The memory space is 16 bits
+ long, 2^16 = 65535 bytes or 64Kbytes.  It has also a separated Input/Output
+space with 256 ports.
+
+ Enough today.  I think I talk too much, don't you? ;)
+
+ Comments, mistakes you have found, whatever...
+
+ Victor Moya
+
+
+
+

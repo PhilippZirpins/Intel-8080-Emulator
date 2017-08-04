@@ -1,0 +1,452 @@
+Memory Emulation
+=================
+
+  The memory is the computer device where the program code and data is
+temporally stored while executing. ;)  But if you don't know about it why in
+hell are you reading this. :))  Well I think I have read in an old book that
+they called it primary storage.  Secondary would be hard disk and other
+'slow-but-large' memory systems.  In fact there is a kind of hierarchy of
+memories:
+
+	Registers	-------->	the fastest, only a few
+	Cache L1	-------->	very fast, small (4KB to 32KB)
+	Cache L2	-------->	fast, a bit more large (1MB-4MB)
+	RAM		-------->	a bit slow :p (64MB to some GB ;)
+	Hard Disk	-------->	as slow as a turtle with broken legs :)
+					many GB to TeraB
+
+  A bit older that table ...  I think now there are some large L1 caches
+(128KB AMD Athlon, HP-PA 1MB).  And I have read about using three cache levels
+in new systems.  The race between CPU speed and memory speed has been always
+won by CPUs, which raises the nightmare of the CPU waiting eternally for an
+access to memory ...
+
+  In fact that isn't so important for emulation, Not in the level we are
+working.  We work with registers, main memory and disk (if we are emulating a
+computer).  Cache memory must be and is transparent to the processor, or
+usually it is.  You won't need to emulate the cache unless you want to monitor
+the execution or something similar.  And I don't think there will be any
+system made that takes into account accurate cache timings.
+
+  We have already seen how to emulate registers, they use an array of n x-bit
+registers and so they are emulated.  There are times when a CPU can have more
+than a bank of registers: for example there is usually an integer bank and a
+floating point bank.  Each bank can have different type (size in bits, format)
+and number of registers.
+
+  I won't talk about disk emulation, that is a specific device subject and in
+console and arcade emulation it is rare to be found.
+
+  What is called main memory can be implemented by a large variety of hardware
+devices.  The main memory is the memory which is addressed and accessed
+directly by the CPU.  It can be Read Only Memory or ROM, normal Read-Write
+Memory or RAM and the mapping of IO device registers (or even memory).  Those
+three 'basic' types of main memory: ROM (read only), RAM (read and write) and
+IO registers can be expanded to a lot more subtypes: EPROM, EEPROM, SRAM,
+DRAM, SDRAM, ...  But that usually doesn't matter when emulating the memory.
+
+  A CPU uses a number of bits to address memory.  That number of bits
+corresponds to the number of lines of the address bus.  They define the size
+of the address space that the CPU can access.  That is the maximum size of
+memory that can be directly accessed "at the same time" by the processor.
+More exactly, this is the maximum amount of memory actually mapped.  In the
+case of the 8080 it uses 16 bits for addressing, so its address space is 64KB
+long.  But it doesn't mean an 8080 CPU can only have 64 KB of memory.  You can
+see that the Gameboy CPU which uses a modified Z80 (it is very similar to the
+8080), has ROMs larger than 64 KB.  How does this work?
+
+  There is a special hardware attached to the address bus which multiplexes
+memory accesses.  That it is called bank switching.  There are some regions in
+the CPU address space which can map different memory pages (a block of the
+real memory).  Those regions are called banks.  Using IO or memory mapped IO,
+a command is sent to that special hardware telling it what memory page is
+wanted in a bank.  Then all accesses to the bank are redirected by the
+hardware to the new page of memory.  That is how it works the Gameboy and the
+Master System for example.
+
+  Lets look at the Master System. It has 3 banks that can address 16KB pages
+of the real ROM.  Here is how it works...  We have a 128KB ROM loaded in our
+MS emulator and we want to get the 16-KB page starting at 80KB in bank 1 (bank
+1 goes from address 0x4000 to 0x8000, the second 16KB of the address space).
+In address space offset 0xfffe there is a register which contains the page
+contained in bank 1 (the page is ROMaddr/0x4000, always starting in a 16KB
+boundary).  The ROM is divided into 16 KB pages so 80KB is the 5th page.  If
+the value stored in 0xfffe was 0x01 we were accessing the ROM memory from 16KB
+to 32KB.  If now we write 0x05 in 0xfffe we can access the address space
+region from 0x4000 to 0x8000 (bank 1) the ROM region between 80KB and 96KB
+(ROM address: 0x14000 û 0x18000) or ROM page 5.
+
+	Bank 1 Page register (0xfffe) contains: 0x01 (page 1)
+
+8080 Memory (64 KB)                   ROM Loaded (128KB)
+|            |
+|            |                          |            |
+|------------|  Bank 1                  |            |
+|            |  (0x4000-0x8000)         |------------| Page 1
+|            |  (16KB)                  |            | (0x4000-x8000)
+|            | ---------------------->  |            | (16KB)
+|            |   (accesses to)          |            |
+|            |                          |            |
+|------------|                          |------------|
+|            |                          |            |
+|            |                          |            |
+
+
+
+	Bank 1 Page register (0xfffe) contains: 0x05 (page 5)
+
+  8080 Memory (64 KB)                   ROM Loaded (128KB)
+|            |
+|            |                         |            |
+|------------|  Bank 1                 |            |
+|            |  (0x4000-0x8000)        |------------| Page 5
+|            |  (16KB)                 |            | (0x14000-x18000)
+|            | -------------------->   |            | (16KB)
+|            |   (accesses to)         |            |
+|            |                         |            |
+|------------|                         |------------|
+|            |                         |            |
+|            |                         |            |
+
+
+  The Master System bank switching hardware is just a small example about what
+can be done multiplexing the CPU address bus.  The NES uses this system
+intensively not only to access more than 64 KB of memory (the NES CPU 6502 is
+also a 8-bit CPU with 16-bit address space) but also to add new hardware
+(capabilities) to the console (mapping IO devices).  They are all those awful
+NES mappers.
+
+  The hardware we are talking about is just (or can be understood as, we don't
+have to bother about the IC implementation) a table that matches different
+regions of the address space to different regions of the real RAM or ROM or to
+IO devices.  For example it could get address 0xdead from the address bus
+lines, then it would seek on its tables and get that this address maps to a
+device, the joystick for example.  It will call that device and get (or write)
+the value from (to) the data bus.  It could also be that the address was a
+bank address, the hardware would add the page offset to the bank address
+offset (the address û bank start address) and send a data request to the ROM.
+
+  The x86 architecture have also had bank switch support, just think about the
+old EMS and XMS memory systems which expanded the DOS 640 KB (1 MB) limit.
+
+  That hardware can become more and more complex and it can even be integrated
+inside the CPU.  Then it becomes what is called a MMU (Memory Management
+Unit).  That is special hardware that every modern multitasking CPU has.  It
+allows us to define LOGICAL address spaces which are mapped onto the real
+PHYSICAL address space (real memory and IO).
+
+  That is a very important feature if you want to have a real multitasking OS
+(a long with some others).  The MMU translates logical addresses (the ones
+used by a process/program) to physical addresses (real memory addresses).
+Each process has its own logical address and has as virtual size which is all
+the size of the CPU address space.  It also hides the OS address space from
+the process when it isn't allowed to see it.  It provides facilities to
+protect memory from reads, writes or execution.  It also traps all invalid
+access and raises a CPU exception (a CPU internal interrupt) so the software
+can solve the problem.
+
+  For example, that it how it works in virtual memory systems: if you want to
+have a memory page stored on disk you mark it as read, write and/or execution
+protected (in fact there must be a flag saying that it is a page on disk, but
+I don't actually know any implementation); when an access is made to that
+address the MMU raises a memory exception; the exception handler sees that it
+is accessing a page that is swapped out and loads the page from disk into
+memory, restores the process context and returns to the point the exceptions
+was raised.
+
+  So the MMU works the address space of the CPU and is divided into fixed
+length pages (the usual size is 4 KB).  Then a table containing information
+about the mapping between logical pages and physical pages is created. Each
+entry contains some more information like protection, process ID and others.
+There is a problem, such a table for large memory spaces is too big (try to
+divide 2^64/4KB and you will get a real big bunch of pages), and usually only
+a few entries are really needed.  The MMU has also limitations in memory and
+space so it can handle only a limited number of entries.  The entries of that
+table are loaded in the TLB (Translation Look-aside Buffer) which contains the
+entries of the tables who are actually being used.  When the MMU detects a
+memory request for an address which hasn't its entry loaded in the TLB, a
+memory exception is raised.  It is the OS (or the any other kind of software
+which is managing the memory system) which has to load the entry for that
+address into the TLB.
+
+  Each time there is a context switch (the processor begins to execute another
+process or gets into the OS) the logical space is changed and that means that
+the TLB must be flushed and loaded again.  That is slow as you think.  The
+best thing is to have the pages always in that process that is inside the TLB
+(it works a bit like the cache).
+
+  Well, that is a MMU.  Perhaps it isn't so important to know about it if you
+want to emulate old 80's machines but it will if you want to emulate something
+more modern like a PSX or a DC. ;)  That is just a small introduction to the
+topic though, it is in fact an advanced topic.  The MMU is also interesting if
+our target CPU has one and we can access it, I will talk about it below.
+
+  Returning to the beginning.  As I have said with the CPU address space it
+can be accessing either memory (ROM or RAM) or a device (which is called IO).
+IO or access to devices (device defined to be everything which is external to
+the CPU but the memory) is performed using the same buses used for memory.  In
+fact a lot of the time there are ports to other buses which are used by the
+devices, for example PCI or ISA buses, but that is just a kind of bus extender
+or redirector.
+
+  The devices are attached using some kind of hardware to some addresses in
+the address space.  Those addresses are used for accessing the device
+registers which are the interface to control them.  Not only registers but
+also memory from the device (the memory of a videocard for example) can be
+mapped that way.   That is what is called memory mapped IO.  Memory mapped IO
+is a method used by most CPUs to access devices.  But some CPUs have another
+method.  They have a special address space which is only used for IO
+operations (access to devices), it's the IO address space.
+
+  The IO address space is usually smaller than the normal address space, for
+example the 8080 has a 8-bit (256 bytes) IO space and the x86 a 16-bit (64KB)
+IO space (the original address space of x86 was 20-bit or 1 MB although its
+address registers where in fact 16 bit, that was possible using segment
+registers to add the remaining bits to the real address, bank switching inside
+the CPU ;).  Each byte or word of the IO address space is also called a port
+(to a device).  Special instructions are used to access that additional
+address space and they are usually called something like IN (read from device)
+and OUT (write to device).  In hardware the IO address space is implemented
+using the same address lines and data lines than the normal address space
+(using the proper number of lines of course) but enabling a special line in
+the control bus that indicates that is a IO access (which could disable memory
+and enable the hardware which connects to the different devices).
+
+  Enough talk about it.  Lets talk about how to emulate it.
+
+  Memory emulation should be fast (in fact memory should also be fast but it
+isn't :(, caches and other tricks are used to try to make access to memory
+seem faster).  As you can easily understand access to memory happens very
+frequently because the data with which the CPU has to work is in the memory.
+It is important while emulating old CPUs which have only a small set of
+registers, so they are accessing memory all the time (in fact access to memory
+is mixed with operation in these CPUs).  And it is important in modern RISC
+CPUs, with larger sets of registers.  Although they can store more data in
+registers and reuse it, it is still needed to access memory frequently with
+the penalty that they are a lot of faster CPUs.  In few words: accessing
+memory is really very common, so applying the programming law "90% of
+execution time in the 10% of the code", it makes sense to implement the memory
+access as fast as possible.
+
+  The fastest way to emulate memory is just to access directly the real
+memory.  And if it is possible using directly the emulated address, mapping
+the emulated address space over the real address space.  But this is usually
+impossible.  The emulated address space can be too large for the real address
+space (or memory) and it can overlap data, code and reserved regions of the
+target machine address space.  So the most common implementation is to use and
+array of continuos bytes (a buffer) for the emulated address space.  Then the
+emulated address is an offset of the buffer.
+
+  This is the implementation of memory that you will have to try to always use
+while doing an emulator.  There are problems that can keep you from using it
+at full rate though.  There are addresses that can trigger actions, and your
+emulator has to know an access has been made (access to a device most likely).
+So using a buffer isn't enough to detect those.  We will have to test the
+address for these special addresses or regions before making an access.
+
+  There is also the problem of the size of the emulated address space.
+Emulating old 8-bit CPUs isn't a problem because 64 KB of memory is very small
+compared with nowadays memories.  But for example, a 68000 has a 16 MB address
+space, which now can be handled (the standard now might be 64 MB or 128 MB for
+PCs), although many times it is a bit heavy to use so much memory only for the
+address space.  And 32-bit CPUs have 4GB of address space which hardly can be
+emulated with an array ;) (for that there is an advanced technique I will talk
+a bit later).  The very same problem happens with 64-bit or 128-bit (any?)
+CPUs.
+
+  In fact often a machine (a console, an arcade or a computer) doesn't have so
+much memory as the size of its address space.  Of course there are exceptions
+when the address space is too small (8-bit CPUs, or even 16-bit CPUs with very
+large ROMs or memory as the Neogeo or old PCs for example) but then the size
+of the address space isn't a problem either.   There are regions reserved for
+ROM, other for RAM, yet another for accessing devices and some always reserved
+for "further use" or just "never use".  Lets see the example of a common
+16-bit console as for example the Mega Drive (Genesis).  This console uses a
+68000 CPU which has a 24-bit (16 MB) address space.
+
+Its memory map is something (in a general view) like this:
+
+    0x000000  |-------------------|
+              |                   |
+              |                   |   ROM cartridge (4 MB)
+              |                   |
+    0x400000  |-------------------|
+              |                   |
+              |                   |
+              |                   |   Reserved (6 MB)
+              |                   |
+              |                   |
+    0xA00000  |-------------------|
+              |                   |
+              |                   |   System IO (1 MB)
+              |                   |
+    0xB00000  |-------------------|
+              |                   |
+              |                   |   Reserved (1 MB)
+              |                   |
+    0xC00000  |-------------------|
+              |                   |
+              |                   |   VDP IO (2 MB)
+              |                   |
+    0xE00000  |-------------------|
+              |                   |
+              |                   |   Work RAM (1 MB)
+              |                   |
+    0xFFFFFF  |-------------------|
+
+
+  All the reserved areas don't need to have real memory so 7 MB out.  We still
+have 8 MB.  The first 4 MB are cartridge dependent, 4 MB is the maximum so
+many times we will need less memory.  The work RAM is really the last 64 KB of
+the region (I don't know why the official documentation reserves all for RAM).
+And all the IO regions are but a few memory mapped device registers; they can
+be handled one in one or using smaller regions than 1 MB.  So from a 16 MB
+address space we have end with 4 MB for ROM (maximum size) and a bit more for
+RAM and IO.
+
+  So how we will solve those two problems: IO access track and a sparse memory
+map?  Using a list of memory regions with a memory handler (a routine or
+sometimes a pointer to a memory buffer) associated to those regions.  That is,
+the system uses any general purpose CPU core (as for example MZ80).  There
+will usually be one of those lists for read access and another for writes.
+The behaviour of an access can change a lot from a read to a write so it makes
+sense to differentiate them, for example a region with mapped ROM can be read
+but any write will cause an error or will be ignored.  Sometimes there can
+even be a list of handlers for fetching (reading opcodes) as for example in
+Starscream (a 68000 emulator).  Then can be also a list of handlers for each
+possible size of the access: handlers for byte access, handlers for word
+access.
+
+  Let see the example applied to the Genesis (not a real implementation, just
+as an example):
+
+  struct ReadHandler
+  {
+     int startAddr;
+     int endAddr;
+     void *routineHandlerOrBuffer;
+  }
+
+  struct ReadHandler[]
+  {
+     {0x000000, 0x3fffff, ROMBuffer},
+     {0xa00000, 0xa0ffff, Z80RegionHandler},    // System IO
+     {0xa10000, 0xa1001f, IORegionHandler},
+     {0xa11000, 0xa11fff, ControlRegionHandler},
+     {0xc00000, 0xc00011, VDPIORegionHandler},  // VDP IO
+     {0xff0000, 0xffffff, RAMBuffer}            // Work RAM
+  }
+
+
+  struct WriteHandler[]
+  {
+     {0x000000, 0x3fffff, ROMProtectHandler},
+      .....
+  }
+
+  The regions of the address space which aren't listed are ignored, either
+raising an error, returning a default value (0x00 or 0xff for example) if it
+is a read, or ignoring if it is a write.  It is system dependant and sometimes
+can be important and others not.  Another alternative is to redirect unlisted
+regions to a generic buffer for all the address space (only using the list of
+handlers for tracking special access).  That is how it works i MZ80.
+
+  Every memory instruction (whether it is a load/store/mov instruction or
+another instruction which performs a memory access) has to have the code for
+checking the address with the proper list of memory handlers.
+
+  Fetching is usually done using a buffer of memory directly (if you know
+where the code will be) because it is faster.  But there are times it will
+need to use the same or some kind of list of memory handlers (for example with
+bank switching).
+
+  If the number of regions to check is too large each access to memory can
+become very expensive.  There are ways to try to optimise it, either grouping
+different IO registers inside the same handler (then it will be the routine
+handler which will check for each register) or sorting the listed regions so
+that the more frequently accessed are the first found.
+
+  Someone could try to use other more memory expensive methods for
+implementing those lists.  The memory space can be divided in pages (of any
+regular size), then an array with one entry for each page is created.  Each
+entry would contain a pointer to a routine or a buffer where the page is
+stored.  When an access is performed the first thing to do is to get what page
+it is (shift to the right).  Using the page as an index in the array of page
+handlers you will get the pointer.  If it is a function pointer just call it.
+If it is a buffer get the page offset of the address and use it as an offset
+inside the page buffer.  That way is for example as it is usually implemented
+for bank switching (for an example, MZ80 bank-switched mode ... erm! not yet
+;), in this case use m6502 from the same author).
+
+  What I have explained here is perhaps the best implementation for a generic
+CPU core.  But if you are doing your own CPU core (or modifying someone else's
+CPU core (if the author lets you of course ;) for a specific machine you can
+do more machine specific implementations and optimisations.  An example could
+be to inline the actions of one or more of the IO handler routines to avoid
+the overhead of a function call (but using more memory and more code which can
+hurt the cache performance. Optimisation isn't easy :P).
+
+  Emulating the IO address space is exactly the same.  It is just a smaller
+address space designed for using with device registers.  So a list of routine
+handlers for the enabled ports (IO address) is the most common, because the IO
+address space will be almost always be very sparse.
+
+  In the case of our 8080 core, as we said it would be MZ80 API compliant
+(well hopefully! - Kieron) we will have to implement a list of handlers for
+reads and writes for the address space and for the IO address space.  Space
+Invaders, as we will see when we start with the hardware, has a very simple
+memory map which lets half of the address space empty.  In the time of SI, the
+8080 address space was still too big ;).
+
+  At last I will talk about MMU emulation and about emulation with an MMU ;).
+
+  Emulating the MMU can be understood as an extension of the page based
+handler system (or bank-swithching system).  But also implies some other ugly
+things.  As I have said the MMU is based on tables which contain information
+about the mapping between the logical (virtual) pages of a process to physical
+pages (real address or memory).  Emulating then means to map from emulated
+logical pages to
+"real" pages (which can be logical pages for our target machine if we are
+working with something else that DOS ;).  I'm not sure if you need to use the
+full emulated logical <û>, emulated physical <û>, real (real logical <-> real
+physical), but I think it will enough with emulated logical <-> real.
+
+  Implementing MMU in software means to implement the TLB (table of pages).
+It will mean to implement all the checks and exceptions that a MMU performs.
+In fact the TLB can be implemented very quickly with only a few access to
+memory.  The real problem is all the checks that the MMU has to perform: first
+check that the pages exist, then see if it is the proper process ID, check for
+protections (read, write and execute) and perhaps some others.  And if there
+is a problem raise the proper exception.
+
+  I won't talk any more about it than that, firstly because I don't remember
+much about this topic (I should have to study some examples ;) and secondly
+because it is an advance topic and it isn't really in the scope of this
+tutorial.
+
+  Implementing MMU in software is slow and can be difficult.  But if we are
+working with a MMUed CPU we can get a great help from our hardware.  There are
+always differences between MMUs of different CPUs, but most of the time they
+can be solved.  We can use our target MMU for emulating the MMU of our
+emulated CPU.  That way we have a simpler, and thousands of times faster
+solution than a software MMU.  Of course we have to have access to our target
+MMU (which isn't always so easy) and we must know what are doing.  I have
+heard of some examples in Virtual PC (I think but not sure) but I haven't
+studied it carefully.  It is very interesting though.
+
+  Something I have never seen (it doesn't mean it doesn't exist) is to
+implement non-MMU memory maps using a MMU.  That should be possible and
+perhaps also much faster in some cases.  One of the reasons I think I haven't
+seen it is because in DOS it is impossible or nearly, and in
+Windows is hard (I have to admit I don't know how).  In UNIX is easier.  As
+many of the cores out there were developed for DOS (and later ported to other
+systems) or in UNIX with compatibility always in mind - using the MMU wasn't a
+good thing.  It could be also be said that with old machines with many
+mappings there is no real need to use the MMU.  In any case - this is one of
+the thinks I would like to study someday :).
+
+  That ends the memory emulation part.  I have probably missed some topics but
+I think it is rather complete.  As always if you have comments, doubts or you
+find mistakes you only have to say. ;)
+
+Victor

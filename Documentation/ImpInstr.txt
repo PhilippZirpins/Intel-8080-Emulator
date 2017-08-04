@@ -1,0 +1,246 @@
+Implementing the instructions
+==============================
+
+  Well it seems that we now have some people writing the implementation of the
+different instructions, but I haven't talked about them. ;)  But you can see it
+isn't so difficult.  In this document I will try to introduce how an instruction
+(in the most cases) should be implemented.
+
+
+  So, what is an instruction?  I think you already know. ;)  An instruction,
+when talking about CPUs, is an order or command to the CPU.  These "commands"
+are stored in memory and are called the code of a program.  Each "command" is a
+sequence of bits that, in a special language that the CPU understands, indicate
+what the CPU has to do.  These bits are called usually the instruction opcode
+(operation code).  So the opcode is the identifier of an instruction.  An opcode
+could have different formats and sizes.  In some CPUs the opcodes have fixed
+length (such as MIPS or Alpha) while others have variable length (for example
+x86).  They could be from 8 bit to 128 bit long.  As the smallest access unit
+for the memory data is a byte the size of an instruction will be always in
+bytes.  In our case the i8080 has 8 bit (1 byte) opcodes but it isn't fixed
+length, see below. ;)
+
+  Usually not all the possible opcodes have a meaning; there are a lot of them
+that are invalid opcodes (instructions which don't really exist).  But as the
+i8080 is an old CPU with only 8 bit opcodes it has only a few of these invalid
+opcodes.  With 8 bit there are 256 potential different instructions.  You could
+say that are a lot, but you should take account that each different small
+instruction is a different opcode.  For example with 8 registers and an
+operation which moves data from one register to another you have 8x8 = 64
+different operations!   This way the 256 operations are easily covered.  The
+full collection of instructions of a CPU is called the ISA (Instruction Set
+Architecture).
+
+  Sometimes an opcode has additional information such as memory addresses or
+immediate data. These additional bytes don't determine the operation that the
+CPU must perform but provide the information needed by the operation.  For
+example the address for a memory access or an immediate value (a number or
+operand) for an add operation.  In some CPUs (CPUs with fixed length opcodes)
+this information isn't out of the opcode but in special "positions" inside the
+opcode.  In the case of CPUs with variable length opcodes this information is
+usually outside of the opcode byte (or bytes).  This happens with our i8080. 
+Taking this into account, and that the size of addresses and data that it can
+handle (8 and 16 bit), we can see that we will have three different sizes for
+our instructions: 1 byte (only the opcode), 2 bytes (the opcode + 1 data byte)
+and 3 bytes (the opcode + 2 data bytes).
+
+  Sometimes there are special instruction opcodes; these are the "escape"
+opcodes.  They are usually used when extending an existing ISA in new CPUs while
+maintaining binary compatibility (they can execute code from the old CPU). 
+These escape opcodes are usually invalids opcodes in the old CPU (many times
+they were reserved for this purpose), but in the new CPU they indicate the
+execution of an extended (new) instruction.  When the new CPU reads and
+identifies an escape opcode it knows that it has to read yet another byte/opcode
+to know the operation it has to perform.  This happens between i8080 and Z80
+with opcodes CBh, DDh, EDh and FDh.
+
+
+  Well, enough talking about instructions and opcodes; let's see how they will
+be implemented in our emulator.
+
+
+  We have to copy the behaviour of the instructions in the original CPU.  The
+instructions change the CPU context (including of course memory and IO space)
+(otherwise they would not be doing anything. ;) So our emulated instructions
+will have to change our emulated context in the same way the original
+instructions. 
+
+  There are many kinds of instruction (as we will see later) but let's now show
+the general structure of an instruction.  An instruction has to obtain some info
+from the CPU context (register, memory, IO) and then perform an operation with
+it.  The result of the operation will be stored somewhere in the CPU context and
+the state of the CPU will be updated so the next instruction could be executed. 
+An instruction also takes some time to execute.  The CPU usually doesn't care
+about it (it only happens ;) but we have to.  We must count the time we are
+spending in the core.  So this is a schema of the behaviour of an instruction:
+
+
+     a nice instruction
+	{
+		get some data
+		perform an operation
+		store the result
+		update the PC
+		update the timing
+}
+
+ Of course not all operations perform all the steps but this is the most general
+structure. 
+
+  In step one we get some data that with we will perform some work.  There are
+three sites where we can get this info: register, memory and IO space (if it
+exists).  With registers, we should worry about the size of the data, for
+example in the i8080 we could access register BC as a 16-bit register or as two
+8-bit registers (B and C), and what register should be read.  When reading from
+IO space we will have to worry about the address in the IO space and the size of
+the data we will read.  With memory it happens the same: we must worry about the
+memory address where the data is and about the size of the data.  But in memory
+we could have found something different and complex: the address modes.
+
+  What are the address modes?  When you get the data from a register you know
+where the data is: in register X.  The same happens with IO the data is at
+address X.  But many CPUs admit more than one way to calculate the address for a
+memory access.  This is used for easily accessing structure, vector, table and
+matrix data.  Usually CISC CPUs (I should have to explain what is a CISC and a
+RISC CPU but I will spend pages and I would finish, perhaps in another doc ;)
+have a lot of different address modes and RISC CPUs have only the basic access
+modes. 
+
+  Access modes are basically: register, immediate, absolute (or direct) and
+indirect.  Register access mode means getting the data from a register,
+immediate means that the information is obtained from the additional data that
+goes with the opcode (we have talked about it).  Direct or absolute addressing
+is the same as the case of reading IO; the opcode's additional data is an
+effective address in the memory.  Indirect addressing means that a register or
+even a memory location (pointed by the additional opcode data) contains the real
+address we have to access.  And it can be yet more complicated with some CPUs
+(like the 68k which has a really nightmare of different addressing modes).  The
+most commons are indirect with post-increment (the address is incremented with
+each access), with pre-decrement (the address is decremented), indirect with
+displacement (indirect addressing + absolute/offset addressing), indexed,
+implicit relative addressing and whatever the ill mind of the CPU designers had
+thought up. ;)
+
+  The i8080 has register, immediate, absolute, indirect (using a register) and
+relative to the PC and the SP modes.
+
+  In the second step with the data obtained is performed on by some way of
+calculations, or perhaps not. ;)
+
+  In the third step the result is stored in a register, memory or IO.  The same
+thing explained in step one applies here, but now it is a write.
+
+  In the fourth step the state of CPU is arranged so the next instruction could
+be executed.  This means basically update the PC (the program counter) that
+points to the next instruction to be executed.  The PC is usually updated adding
+the size of the instruction we have already executed.
+
+  The fifth step exists only in emulation; the normal CPUs don't count how many
+cycles they have executed (or not usually).  They don't need it because the time
+is actually happening; they only have to "feel" it.  But we need to emulate the
+time because we are emulating the CPU in another CPU so we will have a very
+different timing.  So for maintaining a correct timing, we must calculate the
+cycles that have been spent executing the code. 
+
+  A cycle or clock cycle is the unit of time that the CPU uses for synchronising
+(internally the calculations performed by logical gates could have different
+speeds, but this is out of the scope of this tutorial) and it's the unit used
+(not real time units) for measuring the execution time of an instruction.  Even
+programs are sometimes measured in cycles.  This is because of the same CPU, as
+you know, could be found in different speeds (MHz or number of cycles per
+second, so a cycle takes (1/x MHz) seconds).
+
+ Then this information is used with the real time spent in the emulation to
+synchronise with the time in the real machine.  I will talk further about it
+when we start the hardware emulation.  In this step the field in the context we
+added about executed cycles is incremented by the number of cycles it takes the
+instruction in the original CPU to execute.  Each instruction takes a time to
+execute (it would be really a dream to have CPUs with instructions that were
+executed in no time; we would have infinite speed CPUs ;).  Different
+instructions have different timings.  Some instructions even have different
+timings between different executions, for example multiplication or multi-data
+operations.
+
+  Let's see some real examples (thanks to Kieron & Brian respectively):
+
+case 0x04: // INC B | INR B
+
+	/* Clocking */
+(1)	cycles+=5;
+		
+	/* Operation */
+(2)	i8080.B++;
+		
+	/* Condition Codes */
+	/* Is the result zero? */
+(3)	i8080.PSW = i8080.B==0 ? i8080.PSW|Z_FLAG : i8080.PSW & ~Z_FLAG;
+	/* Has the result the sign bit set? */
+(4)	i8080.PSW = i8080.B&0x80 > 0 ? i8080.PSW|S_FLAG : i8080.PSW & ~S_FLAG;
+	/* Is the result of odd or even parity? (using mod 2) */
+(5)	i8080.PSW = i8080.B%2 == 0 ? i8080.PSW|P_FLAG : i8080.PSW & ~P_FLAG;
+	/* Auxillary Parity Check */
+(6)	i8080.PSW = i8080.PSW; /*???*/
+	break;
+
+  In this example (1) is timing.  (2) is data access, calculation and result
+store.  (3) to (6) are calculations.  The PC update will probably be done in the
+loop that executes the instructions so we do not have to put it in every single
+instruction (it is just wasting space doing that really).  BTW, have I said I
+hate C? Oh, my beloved assembler!!  I started with Pascal and x86 Assembler many
+years ago and the C ugly an unreadable syntax still hurts me. ;)
+
+		case 0x11: // LD DE,nnnn | LXI D,nnnn
+(1)			cycles += 10;
+(2)			i8080.D=i8080.mem[i8080.pc+1];
+(3)			i8080.E=i8080.mem[i8080.pc+2];
+(4)			i8080.pc+=2;
+			break;
+
+  In this example (1) is timing, (2) and (3) are data load and store, there
+isn't "real" calculation in this instruction.  In (4) the PC is updated to point
+to the previous byte before the next instruction and the update to the next
+instruction will again be done in the main instruction-executing loop.
+
+
+  There are different groups of instructions.  We could perhaps classify them
+into three groups: load/store or memory instructions, arithmetic-logic
+operations, execution control instructions and control instructions.  The memory
+instructions load and store data between the CPU registers and the memory (it
+could be also memory to memory instructions).  They are used for obtaining the
+data needed (operands) and for storing the results.  The arithmetic-logic
+operations are the real heart of the CPU because they perform the calculations
+with the data.  They do the hard work.  The execution control instructions are
+the jumps, branches, procedure calls and procedure returns, software interrupts,
+etc.  They control and modify the flow of execution, which instructions will be
+executed next.  The control instructions are instructions such as nop, halt,
+reset, and interrupt enable/disable that modifies the status of the CPU.
+
+  We can focus on the particularities of each kind instruction for emulating
+them.  But it will be in another doc. :P  I have spent half an afternoon on
+this, and I have others things to do: sleep, play FF Tactics, do some exercise
+(my relation height/weight really sucks :( ), the dynarec stuff, watch the TV
+(better not, it usually sucks, luckily there are those anime series') ... ;)
+
+  After looking a bit what I have written I have to say I didn't think at the
+start it would be so long.  It has been a really looooong introduction to
+instruction implementation. ;)  All the useful stuff needs to be wrote.  As we
+say here in Spain I have "verbo facil", direct translation is "easy verb", which
+means I like write/talk and I easily fill pages and pages.  My project
+supervisor said it to me when I presented him, after a week or so, 20 pages with
+the *START* of the memory!!
+
+  I will try to write in the next doc (or docs if I write too much :P) about the
+implementation of each kind of instruction.  I will also talk about the use of
+the macros with instructions that are almost the same.  Perhaps a bit about
+testing later too.
+
+  And finally an advice for Hugh, Brian and Kieron, I just find fine you have
+begun the instruction implementation.  But perhaps you should stop a bit until I
+can catch you with my docs (sorry I'm slow ;).  There are some things, as the
+use of macros, which should be discussed.  I think it would be useful for
+testing, clarity and fast coding to use macros for instructions that are in fact
+the same.  And I mean use and not abuse.  Just a thought. 
+
+  Until next doc.
+
+

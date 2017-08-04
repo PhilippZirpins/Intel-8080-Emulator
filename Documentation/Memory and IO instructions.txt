@@ -1,0 +1,328 @@
+Memory and IO instructions
+===========================
+
+
+  So we are here again. :)
+
+  Well I will talk a bit about memory and Input/Output instructions
+and some aspects related to memory emulation.
+
+  I think you remember the model of an instruction I wrote in a
+document some months ago.  Here it is again:
+
+	a nice instruction
+	{
+		get some data
+		perform an operation
+		store the result
+		update the PC
+		update the timing
+	}
+
+  With memory and IO instructions, the important thing is how you get
+or store the data.  The more, let's call it, 'pure' memory instruction
+doesn't perform any calculation.  But there are big exceptions, as we
+will see.
+
+  A memory instruction is an instruction whose purpose is to load data
+or store data.  This can be load data from memory to a register, store
+data from a register into memory, move data from a memory address to
+another memory address or move data between registers.  An IO
+instruction is the same but getting the data from/to a special IO
+address space.  IO instructions are also more limited in the number of
+options and usually there is just one or a couple of alternatives: IO
+data from/to register for example.
+
+  This means that the things we have to look for in a memory
+instruction are what kind of data must be loaded, from where it must be
+loaded and where it must be stored.  Sometimes it is also important how
+it will be stored.
+
+  The words we have to take into account are: data size (byte, word,
+double word, ... (which means the size of the data we are working
+with)), source address and destination address.  The address can be
+directly used (absolute or register addressing) but a lot of the time it
+must be calculated.  The final address we get after the calculation is
+usually called the effective address.  We have to talk about addressing
+modes.
+
+  An addressing mode is the way the CPU has to calculate the source
+or destination address of a memory instruction.  There are many kinds
+and each processor has different addressing modes.  The ones that can
+be found always in a processor are immediate, register, absolute and
+base with offset.  There are other addressing modes more complicated
+(you will find them on CISC machines) as base indexed with offset,
+postincrement, predecrement.   We will see some examples.
+
+  You could make a question: what they are used for?  You see, just
+with a direct mode to address things as could be perhaps register and
+absolute we should have enough.  Why we need all of them?  Oh!,
+perhaps you already know about it. ;)  In simple words they are for
+ease the access to complex data types as arrays, matrix and
+structures.  For example if you want to access an array of ints (well
+let say 4 bytes ;) you can load the base address (the address where
+the array starts) in a register, R0 for example, and use another
+register as index, R1.  If the array is accessed in a loop R1 could be
+like the i index in the array (iteration variable), but as the data
+size is 4 bytes the index register R1 must be incremented by 4.  Code
+example:
+
+		mov r0,@arrayOfInts
+		mov r1,0
+		loop
+		{
+			mov r2,[r0+r1]
+			do something with r2
+			add r1,4
+		}
+
+
+  I think it was more important with old CISC CPUs because with more
+addressing modes (and more complex ones) it was easier for the
+compiler to generate code for access complex data, the code generated
+was smaller (which was also important in those days) and perhaps it
+was a bit faster than use many instructions for calculating the
+effective address (using special hardware for calculate addresses).
+With RISC CPUs that has lost importance, the compilers are now far
+better and having special hardware for calculate address just
+slowdowns the processor.  That explains why RISC CPUs doesn't have
+many addressing modes as they are meant to be simple.
+
+  Let see some examples of addressing modes.  Our 8080 is poor in
+examples because it only has register, immediate, absolute and
+indirect.  Let see an example for each:
+
+	* register:		ld a,b  (using Z80 mnemonics)
+				[a] <- [b]
+
+	the content of register b is copied in register a
+
+	* immediate:	ld a,0x10
+			[a] <- 0x10
+
+	the value 0x10 is stored into register a
+
+	* absolute:		ld a,(0x1000)
+				[a] <- [0x1000]
+
+	the byte in memory address 0x1000 is loaded into register a
+
+	* indirect:		ld a,(hl)
+				[a] <- [[hl]]
+
+	the byte pointed by the value stored in hl register is
+	loaded into register a
+
+  There is also another address mode, relative, which is used in jump
+instructions.  The jump address is calculated as an offset from a base
+register, in this case PC.  We will see jump instructions in another
+doc.
+
+  For more examples I will show the x86 modes and some 68000 modes.
+The usual way an address is calculated in x86 (386+, on early x86 CPUs
+there were some limitations, for example in the registers used) is as
+follows:
+
+	base register + index register * factor + offset
+
+ factor can be 1,2,4 or 8 (the data size in bytes).  In the case of
+the 68000 we can find two address modes really interesting:
+predecrement and postincrement (like C –-a and a++) –(an) and (an)+.
+'an' is an address register (indirect addressing mode).  In
+predecrement addressing the content of 'an' is substracted by the data
+size (1, 2 or 4 bytes) and then the result stored in 'an' and used as
+effective address.  Similar happens with postincrement but the value
+in 'an' is first used as effective address and later incremented.
+
+  I think I have forgotten something ... let see ... oh ... I haven't
+talked about data size.  Well that should be easy ;).  The data is
+stored in memory as bytes, that is because the smallest access unit is
+a byte.  But not all data accesses are made byte by byte.  The data
+size is determined in most of the cases by the size of the register
+where/from it will be stored/loaded.  The 8080 has 8 bit (1 byte) and
+16-bit registers (2 bytes) and can perform memory operations with both
+so there are those two data sizes available.  They are called byte and
+word sizes.  The x86 (386+) is a 32-bit architecture so data size can
+be 1,2 or 4 bytes (and if we also look to FPU or MMX 8 bytes or even
+10), called byte, word, and double word sizes.  So the data size is
+the unit (number of bytes) of the size of the data that is moved in a
+memory instruction.
+
+  At last to end this introduction (introduction! a bit large
+introduction ;) I will mention some difference between the CISC memory
+instruction model and the RISC instruction model.  All the way I have
+been talking about 'pure' memory instructions which are only related
+to data movement.  That is usually true with RISC CPUs, where the CPU
+memory unit is rather differentiated from the calculation units (the
+reason is mainly related with the heavy cost of a memory access at
+high clock frequencies, and because the RISC CPUs have a large
+register bank), but don't in CISC CPUs.  In RISC they are usually
+called as load (memory to register) and store (register to memory)
+instructions.  The RISC CPUs have also only the more basic addressing
+modes.
+
+  In CISC CPUs memory operations are mixed with calculations in the
+same instructions, for example an add instruction can get one of its
+operands from memory.  That happens in the 8080 with the instruction "add
+a,(hl)".  The reasons for it were because the CPU vs memory speed
+difference wasn't so important as it became later and, the most
+important, because CISC CPUs suffer from a very small register bank
+(the fault I find with x86 :( ).  A few register number implied
+you needed to be accessing very frequently the memory so it was logic
+to integrate memory access to calculation instructions.  On modern
+CISCs (x86 of course) it has been maintained because of compatibility.
+CISC CPUs use to use 'move' as instruction name but not always.  CISC
+CPUs have many and complex addressing modes.
+
+  Let's now summarise all the steps involved in the execution of a
+memory instruction and the things we have to look while emulating
+them.
+
+  First we have to get the source address.  That means to discover
+what addressing mode is used and, if it is a complex addressing mode,
+to perform the calculation of the effective address.  At this stage we
+have to look at the source data size and load the data.  The
+destination data size could be different or the data format different
+so it could be needed to perform some kind of data transformation.
+Finally we get the destination address (the same process as with the
+source address) and we store the data.
+
+  The addressing mode decoding is usually made at the same time with
+the instruction decode so usually it isn't needed (that happens with
+the 8080).
+
+  The more common transformation is from a smaller data size to a
+larger data size, for example from byte data to word data.  There are
+two cases then: preserve the sign of the original data (sign
+extension) or perform a logical extension.  The first means copy the
+more significant bit (sign bit) of the source data into the higher
+bits of the target data.  The second one means to clear the higher
+target bits.  An example:
+
+	17 or 0x11 (0001 0001b) -> 0x0011 (0000 0000 0001 0001b) for
+	both cases
+
+	-17 0xef (1110 1111b) -> 0xffef (1111 1111 1110 1111b) sign
+	extended, 0x00ef (0000 0000 1110 1111b) normal extension
+
+  Another thing we have to look at carefully is if the memory
+instructions have side effects, that is, if it modifies the flags.  In
+that case we have to change them as it is defined in the ISA
+definition.  There will be flags that won't be affected by a memory
+instruction, as carry and overflow, because they are related to
+calculations.  But flags as zero, sign or parity flags are only
+related with the value itself so they can be changed by the data
+loaded or stored.
+
+  There are still two kinds of memory instructions which are a bit
+different: multidata instructions and stack instructions.
+
+  Multidata instructions are memory instructions which perform
+multiple data accesses to consecutive memory addresses.  They use a
+register as a counter (number of iterations), another as source
+address, other as destination address and usually there is also an
+ending condition which finishes the instruction although the counter
+may have not arrived at zero yet.  Examples are: Z80 LDIR kind of
+instructions and x86 REP MOVS kind instructions.  While emulating them
+we have to look carefully to check that the loop and condition testing
+are correctly emulated.  They always (or very usually) change flags so
+flag calculation is important here.
+
+  The stack instructions are usually called push and pop (push to the
+stack, pop from the stack).  But what is the stack?  Well, a stack ;).
+It is a LIFO data structure, that means Last In First Out, so the last
+value we have pushed into the stack will be the one we will get with a
+next pop instruction.
+
+  This hardware assisted data structure is very important for
+programming.  It is used for storing temporal data.  Which data is
+that?  The first and more important: it is used for storing the return
+address for a procedure call (we will see it again when we talk about
+jump instructions) and to save and restore registers and flags in
+procedure calls and interrupt requests.  But compilers also use it for
+store procedure or function local data.  All the data you define in
+the start of a C function (with some exceptions) is dynamically
+allocated on the top of the current stack at the start of the function
+and freed at the end.
+
+  The stack is usually stored starting from high addresses to low
+addresses but we still need a pointer to the top of the stack.  This
+pointer is the Stack Register, usually called SP.  All the stack
+instructions perform accesses, which are relative to the SP.  And they
+all change the SP after (or before) and perform the data movement.  Push
+moves data to the top of the stack and decrements SP, pop increments
+SP and loads data from the pointed address.  A procedure call pushes
+data into the stack and decrements SP, a procedure return gets data
+from the stack and increments SP.
+
+  There is yet another point we have to take account: endianess.
+Endianness means how it is stored multibyte data in memory.  That can
+be big-endian or little-endian.  Big-endian means that the more
+significative byte (MSB) is stored in a lower address then the LSB.
+Little-endian means the opposite the LSB is stored first and then the
+MSB.  For historical reasons some CPUs are little-endian others big-
+endian and some have both operation modes.  8080 and family are
+little-endian as well as x86. The 68000 is big endian.  Examples:
+
+	0x1234
+
+	big-endian			little-endian
+
+	0x12				0x34
+	0x34				0x12
+
+  We have to know what kind of endianess of the emulated CPU and
+our target machine.  If they are different and we are doing a
+multibyte data access we should have to change the data format between
+them.
+
+  Finally all 'instructions' perform an access to memory, that is
+fetching their opcodes.  The code is stored in memory and we have
+to take that into account when we load opcodes and decode them.  The
+code is read from the memory address pointed by the PC.  Usually it
+won't be necessary to do anything special while reading code but
+sometimes that is also important.
+
+  IO instructions work similar than memory instructions but using a
+separated smaller address space.  The instructions are simpler and
+they don't have many addressing modes, just register, absolute and
+perhaps register indirect.  Each address in the IO space is also
+called 'port' because it a port (a way) to an external device. Those
+instructions as usually called in (read data from a data port to a
+register) and out (store data from a register to a data port).
+
+However bear in mind that some CPU's do not have "IO instructions" as
+devices are mapped to memory addresses. For example you might just use
+a MOVE instruction to write a byte of data out to a serial port that
+is mapped to a certain address. Some examples are the 6800 and the
+68000. The 68K does have a MOVEP (Move Peripheral) but is is still
+not really a IO instruction, just a way of writing 16 bit data to an
+8-bit data bus. - Kieron
+
+  I have let the most important topic for the end.  It is memory
+emulation.  I have been talking about what has to do memory
+instruction with address and data, but I haven't talked about how we
+will emulate the memory.
+
+  The document has become a bit large and I want to make them small so
+I will quit here.  Now our emulated memory instruction is just
+something like:
+
+		reg = memoryread(address)
+
+		or
+
+		memorywrite(address,reg)
+
+		or
+
+		reg = IOread(IOaddress)
+
+		or
+
+		IOwrite(IOaddress,reg)
+
+In the next doc, Memory Emulation (Part II) I will talk about what
+will be behind those functions.
+
+

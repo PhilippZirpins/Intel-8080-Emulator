@@ -1,0 +1,191 @@
+
+Introduction to the process of emulation
+=========================================
+
+When you want to emulate a computer or an arcade system you have to emulate
+all the hardware (and sometimes also the software) that the system has. 
+Therefore, for this emulation you need to know the architecture of the system. 
+What is the architecture of an arcade system?  Well, it is almost the same of
+any computer system known.  There is a main CPU, or sometimes a master CPU and
+one or more slave CPUs, or a cluster of processors all working together
+(multiprocessors).  In any case SI is an old small arcade machine so it's a
+single processor system.
+
+There are other components attached to the CPU: memory (both ROM and RAM),
+graphic hardware, sound hardware, input hardware and perhaps other special
+hardware.  A bus connects all these components. A bus is a group of electric
+lines.  There are three main types of buses: address bus, data bus and control
+bus.  A control bus carries signals from/to the memory and hardware devices
+to/from the CPU; those signals are used for controlling the devices and to
+inform the CPU of the state of the devices.  The data bus carries data between
+the CPU and the devices.  The data bus size indicates the CPU bit size.  In
+this case the 8080 is an 8-bit CPU because it has an 8-bit data bus.  The
+address bus carries the memory address or the data port where the data will be
+read or written.  The 8080 has a 16-bit address bus; for the data port only 8
+of these bits are enabled.
+
+
+A small schema can be:
+
+
+     |--------|                       |---------|
+     |        |                       |         |
+     | Memory |                       | Devices |
+     |        |                       |         |
+     |----|---|                       |----|----|
+          |                                |
+----------|---------------|----------------|------------- BUS
+                          |
+                      |---|---|
+                      |       |
+                      |  CPU  |
+                      |       |
+                      |_______|
+
+
+I'm really bad as an ASCII painter.
+
+The processor executes instruction from memory (in SI this is from ROM).  Data
+is read from memory and written through the bus.  The CPU sends commands to
+the different devices through the bus and it also gets response from them.
+
+Why do you have to know about such things?  Because for emulating something
+you must know how it works.  You must know exactly how it works so you can
+reproduce the behaviour of the system.
+
+Well, now talking about emulation.  There are many manners that a machine can
+be emulated.  The main techniques actually being in use are interpreting and
+dynamic recompilation.  Both talk about how the CPU core is emulated.  As we
+will see, the CPU emulation is the real core or heart of the emulator. 
+Dynamic recompilation means to translate or compile source CPU instructions
+into target CPU instructions.  An interpreter means to interpret or execute
+source CPU instructions, no translation is performed and each instruction is
+handled as a command or function and executed (if you know how Basic, Tcl or
+Perl works, it is the same technique).  I will talk about the other emulation
+techniques someday, but this document is beginning to be too large so I will
+only talk about interpreter emulators.
+
+The emulator is built as the architecture we are emulating, around the CPU. 
+The CPU emulation is the core of the emulator.  Why?  Let's see how a computer
+or arcade machine works.  The CPU fetches and executes instructions from the
+memory (in our case ROM memory).  It performs calculations, moves data from
+ROM to work RAM and video RAM, sends commands to the devices and gets response
+from them.  So our emulator works in a similar manner.  This is the main
+algorithm of an emulator:
+
+	reset_CPU();
+	cycles = cycles_until_next_event;
+	while(!end)
+	{
+		res = core_exec_instr(cycles);  // call the CPU core
+
+		if (res==cycles_to_event)
+			// call interrupts, draw screen, ...
+
+		cycles = cycles_until_next_event;
+	}
+
+(For a best algorithm read Marat How To, today I'm a bit tired)
+
+The CPU interpreter fetches or reads opcodes from memory as a processor does. 
+The interpreter decodes the instruction, meaning that it realises what
+instruction it is and executes the code that performs the function of that
+instruction (modifies register values, writes to memory, updates cycle
+counter, ...).  You need to know the timing of the emulation, and this can be
+done counting the number of cycles the CPU has executed.  The “time” of a
+computer system is held by the CPU, (in the first systems that was more
+important, more modern systems have other ways to know the time).  You have to
+know the time of the computer because there are some tasks that have to be
+performed in a specific (sometimes very accurate) moment, for example, such
+tasks as drawing the screen or sending an interrupt signal.  The CPU core will
+be executing instructions until an error is found or the number of cycles to
+execute passed are exhausted.  The core is called to execute a number of
+cycles each time; this number is related to something that might happen in a
+moment of the emulation (we can call it an event).  When the cycles are
+exhausted some checks or actions are performed: drawing the screen, sending an
+interrupt signal, or other task…
+
+Another interesting question is how the emulated CPU can communicate with
+devices.  In a computer there are two ways for the CPU can control or
+communicate with the devices: memory mapped IO (input/output) or with a
+special IO operations.  All the CPUs have memory mapped IO, but only a few
+have a special set of IO operations; 8080, Z80 and x86 family are such CPUs. 
+Memory mapped IO means that a region of the memory isn't real system memory
+but is mapped registers or memory from a device.  When the CPU reads or writes
+to it, the CPU is reading from or writing to a device.  Special hardware
+attached to the address and data bus detects a read/write in that region and
+redirects the read/write operation to the correct device.  The video RAM is an
+example of memory mapped IO.
+
+The other way is to have a separate set of instructions and address space for
+IO.  Each device (or register in a device) has a number (address) and some
+load/store kind of instructions (usually called IN/OUT instructions) to let
+writes happen to them.  How is that emulated?  With memory and IO maps.  A
+memory map is a list of memory regions that has a memory handler (a pointer to
+a function that implements the memory access) associated.  Each time a read or
+write is performed where the address indicates a device's memory region, the
+proper function is called (if there isn't a handler it's understood that it is
+a direct access to the emulated memory).  The same happens with IO maps when
+the CPU interpreter executes a load/store operation that matches the accessed
+address of the memory map.  If it's a normal memory operation the interpreter
+accesses the emulated memory directly.  If it's a mapped IO region the
+interpreter calls a function that implements the behaviour of the mapped
+device.  For example a pixel could be drawn or a sample played.  Such
+functions access the data structures from the emulated device that are changed
+following the device behaviour.
+
+Yet another way a device can communicate with the CPU is interrupts.  When an
+interrupt happens the CPU stops the execution and calls a special routine. 
+When the routine ends the CPU continues (usually) the execution from the point
+it was interrupted.  The interrupts are perhaps one of the more difficult
+things to emulate.  When the emulation decides that an interrupt has to
+happen, it sets a flag in the CPU core context.  Next time
+execute_instructions() (the CPU core) is called the core executes the code of
+the interrupt routine and later continues the normal flow of execution. If you
+want a more detailed look at the interrupt system, please look at the advanced
+section at the end of this document.
+
+That is all for now...
+
+I think the document is still confusing and incomplete.  Well, it's what I
+could do with the time I have. ;)  And a lot of the subjects covered will be
+better explained when we begin to implement them.  I hope it will work as an
+overview of the process of emulation.
+
+Let me know how to improve it!
+
+Victor Moya del Barrio
+vmoya@ac.upc.es
+
+
+
+ADVANCED SECTION (Interrupts in more detail)
+
+This section expands on this interrupt idea further and goes into a little
+more detail that may become useful later. Effort has been made to make this
+as general as possible and does not mean to imply any CPU architecture. It is
+purely for illustration purposes. If you disagree with something here then
+please say, so it can be modified.
+
+What follows is the steps that are taken when an interrupt happens:
+
+ o An interrupt occurs (being caused internally by the CPU or by an external
+    device) and a flag is set in the CPU context.
+
+The interrupt is serviced the next time the CPU core calls
+execute_instructions() as follows:
+
+ o The current Program Counter is saved on the stack.
+ o The interrupt flag is unset - we are now handling the exception.
+ o The CPU gets the address of the routine to handle the exception (the
+   "where from" is CPU specific) and sets the Program Counter to
+   this new value.
+ o This routine, or exception handler is executed (usually from ROM or RAM).
+ o The routine finishes and the CPU grabs the old Program Counter back from
+   the stack.
+ o When the routine ends the CPU continues from this Program Counter which
+   is the execution from the point it was interrupted.
+
+It is not quite as simple as this because what do you do when a second
+interrupt occurs, when the CPU is in the middle of processing an interrupt?
+We will go into this in more detail later as it is pretty much CPU specific.

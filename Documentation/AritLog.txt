@@ -1,0 +1,171 @@
+Arithmetic-logic Instructions
+=============================
+
+
+  These instructions realize the real hard work of the computer.  They
+perform arithmetic calculations: additions, substations, multiplications
+and divisions; and logical operations: not, and, or, xor; and bit
+operations: bit tests and sets, bit shifts and rotations.  It is really
+incredible what can be done with only a few operations!
+
+  Their structure is almost the same that the general structure I wrote
+in the last doc.  They access data, call operands, perform an operation,
+store the result and so on.  The arithmetic instructions usually use
+registers as source data, sometimes they also use memory but never IO
+(from what I know).  The result is almost always stored in a register. 
+RISC CPUs and older ones, like the i8080, perform all their arithmetic
+and logical operations using registers.  CISC CPUs, though, admit
+usually memory as one operand.  Some heavy CISC could get more than one
+operand from memory and even store the result in memory (I'm not sure,
+x86 doesn't do such a thing and I don't know many CISC architectures).
+[Some versions of the 68000 family can do this - Kieron]
+
+  The most important thing with the arithmetic and logic instructions is
+the calculation that they perform.  This calculation has usually two
+important aspects: first the calculation itself and second the flag
+calculation.  Usually the programmer is not only interested in performing
+an operation to get a result, but also to get some information about the
+result.  This information is stored in the flags and is then used for
+deciding what to do next, which is usually with a branch conditional
+instruction. So we will have to emulate the calculation itself and then
+perform the flag calculation.  Flag calculation could be really a
+nightmare in C and it is the main reason I hate C cores, it is really a
+lot of easier to emulate flag calculation in asm.
+
+  There are also arithmetic and logical instructions that do not store
+the result but only perform the calculation so the flags would be
+updated.  Examples of this instruction are cmp (compare, which is really
+a subtraction) and test (which is a logical and).
+
+aritlog_instruction
+{
+	tmp1 = get operand 1
+	tmp2 = get operand 2
+	tmp3 = calculation ( tmp1, tmp2 )
+	flags = calculate_flags ( tmp1, tmp2, tmp3)
+	store_result ( tmp3 ) 
+	....
+	all the other usual stuff
+	....
+}
+
+  When emulating the calculation we have to take care of a few things.
+First bitness, the emulated machine and the target machine could have
+different word sizes (what in C is usually called an int).  For example
+in a i8080 the word size should be the byte (I'm not sure though because
+I don't have a i8080 C compiler) and it has some double word operations
+(16 bits operations).  In x86 (if it is +386) the word size is 32 bits
+and in a new generation RISC it is 64 bits or even 128 bits.  The real
+big problem happens when we are translating from a machine with larger
+word size than our target machine word.  If our C compiler has math
+extensions that perform calculations with double the machine word size,
+the emulation will be a lot slower but we may not really care.  If not
+we will have to implement our double size operations.
+
+  If the target machine has the same word size there is not usually a
+problem, but there could possibly a little/big endian problem. This is
+another thing I will talk about in another doc.  If the target machine
+has a bigger word size then we have to perform the operations in the
+correct size (halfword or whatever) or even zeroing the upper bits of
+the result (if the target CPU does not perform operations in such a
+size).
+
+  Another thing we have to be aware of is that not all instructions with
+a name X perform the same operation in all the CPUs.  A MUL instruction
+could be for example signed and unsigned or a rotation instruction could
+have different side effects.  So we have to look at the ISA definition
+and the C (or another language, or even the target ISA definition if we
+are using assembler) and know EXACTLY what this instruction is doing in
+both machines and languages.
+
+
+  Flags, which are also known as condition codes, are stored usually in
+the CPU status word (or PSW), this happens in our i8080 or even in the
+x86 architecture, but it is not needed.  They could be in a different
+register or even to have different registers for each condition code.
+Sometimes each one used for storing the result of a different
+instructions (this happens in IBM Power architecture).  Probably one of
+the biggest differences between the different architectures can be the
+flags.  There are even architectures that do not have them!
+
+  As I said before flags are mainly used for storing some information
+about the result and then a person or compiler can use this information
+to make a decision using a conditional instruction.  A conditional
+instruction is an instruction that changes the order of program flow
+depending on some element - usually being the flags.  They are also used
+for helping with extended arithmetic that is arithmetic with numbers
+larger than the word size. For example carry and overflow flags can be
+used in such a way.
+
+
+  The most common flags or condition codes are; zero flag (ZF), carry
+flag (CF), overflow flag (OF) and sign flag (SF).  There are also other
+flags and combinations/modifications of those.  The zero flags indicates
+if the result is zero, usually ZF=1 means result is 0 and ZF=0 result is
+different from 0.  The zero flag is easy to calculate comparing the
+result with 0.
+
+  The carry flags indicates that the operation has produced a carry.
+This means that the result exceeds the size of the CPU word.  This can
+be explained better with an example:
+
+  Think of a usual sum,
+
+            124
+      +     876
+      -----------
+           1000
+
+  If we are working with only three digits we have a carry of one unit.
+
+  If this is applied to binary operations, the carry can be only one or
+zero and this is what is stored in the CF. The CF is also used for
+storing the borrow of a sub and is used in some rotation instructions. 
+It happens when the negative result of the sum exceeds the size of the
+result word size.  If your machine has a word size larger than the
+emulated machine you can perform the operation in double the word size
+of the emulated operation.  Then you test if the result exceeds the
+larger unsigned binary number possible with the emulated operation word
+size.  The borrow is the same as the carry but with a subtraction and so
+something similar can be done.  You need to know a bit about how binary
+sums and subs are performed, for example a sub is an addition with the
+minued complemented/negated.  I should have to explain about it but it's
+making my head hurt now.  I could just about remember exactly how it
+works. Ask me if you want me to explain this further.
+
+  The overflow flag indicates that the result is sign changed from the
+real result that it should be.  It is used with sum and subs.  It is
+usually used by multiplication and division instructions and I think it
+could mean also that result exceeds (usually by far) the result word
+size. As the CF flag could be also used for other things.  To implement
+it you can check the operation and the sign of both operands and the
+result and act properly.
+
+  The sign flag stores the sign of the result, which is the highest bit
+of result.  In two-complement integer arithmetic this means that SF=0
+(the highest bit of the result is a 0) means a positive number and SF=1
+a negative number.  It could easily implemented just checking the
+highest bit of the result.  For example doing an AND operation with 0x80
+for byte word size, to zero out all the lower 7 bits and then checking
+this result with zero.
+
+  You have to take into account that the definition of the flags may
+change a lot between different CPUs.
+
+  Something that we also have to take account with some arithmetic -
+logic instructions is that they could have variable timing.  This means
+that depending upon the values of the operands the timing will be
+different.  This happens with multiplication, division and some
+rotation/shift operations and more usually with older CPUs.  Sometimes
+could be really difficult to calculate accurately the real timing of
+such operations.
+
+  Just to mention it, there are also floating point instructions. These
+instructions perform float calculations rather than integer calculation
+as the usual arithmetic instructions do.  There is usually a separate
+register set (usually with larger registers) for those instructions and
+they also a separate status word and condition flags.  Not all CPUs have
+floating point instructions.  Only the more "modern" (if a 386 can be
+called modern) usually have a FP unit.  The i8080 clearly does not have
+it and FP emulation is far away from the scope of this project and
+document.
